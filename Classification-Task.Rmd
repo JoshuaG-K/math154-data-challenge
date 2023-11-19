@@ -1,0 +1,84 @@
+---
+title: "Classification-Task"
+author: "JoshuaGK"
+date: "2023-11-19"
+output: html_document
+---
+```{r}
+require(randomForest)
+library(randomForest)
+library(e1071)
+```
+
+First we load the data
+```{r}
+data.not_test <- read.csv("cs-training.csv")
+data.test <- read.csv("cs-test.csv")
+# Remove the index column so we don't overfit
+column_to_remove <- "X"
+column_to_remove_2 <- "SeriousDlqin2yrs"
+data.not_test <- data.not_test[,-which(names(data.not_test) == column_to_remove)]
+data.test <- data.test[,-which(names(data.test) == column_to_remove)]
+data.test <- data.test[,-which(names(data.test) == column_to_remove_2)]
+
+print(dim(data.not_test))
+print(dim(data.test))
+
+# Next we remove the na values
+data.not_test <- na.omit(data.not_test)
+data.test <- na.omit(data.test)
+
+print(dim(data.not_test))
+print(dim(data.test))
+```
+For the purpose of testing, we will use a much smaller size of the data
+```{r}
+sandbox_size <- 0.05
+num_rows <- nrow(data.not_test)
+data.not_test <- data.not_test[1:round(sandbox_size*num_rows),]
+num_rows_test <- nrow(data.test)
+data.test <- data.test[1:round(sandbox_size*num_rows_test),]
+print(dim(data.not_test))
+print(dim(data.test))
+```
+
+Next we split the data into train and validation sets.
+```{r}
+train_size = 0.7
+split <- round(nrow(data.not_test)*train_size)
+num_rows <- nrow(data.not_test)
+data.train <- data.not_test[1:split,]
+data.cv <- data.not_test[(split+1):num_rows,] # For some reason, matrix splicing is inclusive on both sides [start, end] not [start, end)
+print(dim(data.train))
+print(dim(data.cv))
+```
+Now we create a function to get the accuracy of our model on the test_data
+```{r}
+get_accuracy <- function(model, test_data) {
+  prediction <- predict(model, test_data)
+  confusion_matrix <- table(predictions, test_data$SeriousDlqin2yrs)
+  accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+  return (accuracy)
+}
+```
+
+Now we want to train a decision tree classifier using our cross validation set
+```{r}
+rf_model <- randomForest(factor(SeriousDlqin2yrs) ~ ., data = data.train, ntree=500)
+
+accuracy <- get_accuracy(rf_model, data.cv)
+print(accuracy)
+
+```
+Now we create an svm classifier
+```{r}
+svm_model <- svm(factor(SeriousDlqin2yrs) ~ ., data=data.train, kernel="radial", cost = 4, gamma = 0.5)
+accuracy_svm <- get_accuracy(svm_model, data.cv)
+print(accuracy_svm)
+```
+Next steps:
+Figure out why the accuracies are exactly the same (they shouldn't be)
+Figure out a way to tune these classifiers with cross validation
+
+
+
