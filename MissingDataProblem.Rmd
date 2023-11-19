@@ -1,0 +1,46 @@
+---
+title: "MissingDataProblem"
+author: "Mo Kyn"
+date: "2023-11-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Missing Data Problem
+This R Markdown file holds to code necessary to fill in the missing data in the training and test datasets.
+We are using the mice package by recommendation of Prof Chandler.
+
+```{r}
+require(mice)
+```
+
+```{r}
+data.train <- read.csv("cs-training.csv")
+data.test <- read.csv("cs-test.csv")
+```
+
+The columns that we need to fill in missing values for are:
+
+```{r}
+na_columns <- colSums(is.na(data.train)) > 0
+na_column_names <- names(data.train)[na_columns]
+na_column_names
+```
+
+```{r}
+imputed_data <- mice(data.train, m=15, method='pmm', seed=47)
+```
+
+
+```{r}
+plot(imputed_data)
+```
+```{r}
+complete(imputed_data, 1)
+```
+```{r}
+data.train
+```
