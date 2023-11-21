@@ -5,9 +5,11 @@ date: "2023-11-19"
 output: html_document
 ---
 ```{r}
-require(randomForest)
+# install.packages("rBayesianOptimization")
 library(randomForest)
 library(e1071)
+library(rBayesianOptimization)
+library(pROC)
 ```
 
 First we load the data
@@ -47,8 +49,12 @@ Next we split the data into train and validation sets.
 train_size = 0.7
 split <- round(nrow(data.not_test)*train_size)
 num_rows <- nrow(data.not_test)
+
 data.train <- data.not_test[1:split,]
+data.train_labels <- data.not_test[1:split,which(names(data.train) == column_to_remove_2)]
+data.train_no_labels <- data.not_test[1:split,-which(names(data.train) == column_to_remove_2)]
 data.cv <- data.not_test[(split+1):num_rows,] # For some reason, matrix splicing is inclusive on both sides [start, end] not [start, end)
+
 print(dim(data.train))
 print(dim(data.cv))
 ```
@@ -56,7 +62,7 @@ Now we create a function to get the accuracy of our model on the test_data
 ```{r}
 get_accuracy <- function(model, test_data) {
   prediction <- predict(model, test_data)
-  confusion_matrix <- table(predictions, test_data$SeriousDlqin2yrs)
+  confusion_matrix <- table(prediction, test_data$SeriousDlqin2yrs)
   accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
   return (accuracy)
 }
@@ -76,6 +82,49 @@ svm_model <- svm(factor(SeriousDlqin2yrs) ~ ., data=data.train, kernel="radial",
 accuracy_svm <- get_accuracy(svm_model, data.cv)
 print(accuracy_svm)
 ```
+Now we test out the bayesian optimization package:
+```{r}
+# print(data.train_labels)
+data <- data.train_no_labels
+y <- data.train_labels #droplevels(iris[51:150,5])
+b <- sample(1:100) 
+data <- data[b,]
+y <- y[b]
+
+svm.cv1 <- function(gamma, cost) {
+  n <- nrow(data)
+  splits <- c(seq(1,n, n/10),n+1)
+  jumps <- n/10
+  fitted <- c()
+  for (i in 1:10) {
+    test <- splits[i:(i+1)]
+    test[2] <- test[2]-1
+    test.y <- as.factor(y[test[1]: test[2]])
+    print(test.y)
+    test.data <- data.frame(y=test.y, data[test[1]:test[2],])
+    
+    train <- (1:n)[-(test[1]:test[2])]
+    train.y <- as.factor(y[-(test[1]:test[2])])
+    train.data <- data.frame(y=train.y,data[train,])
+
+    fit <- svm(y~., data=train.data, gamma=gamma, cost=cost)
+    fitted <- c(fitted, attributes(predict(fit, test.data, decision.values=TRUE))$decision)
+  }
+  return(list(Score=roc(y,fitted)$auc, Pred=0))
+}
+
+bayesian_optimized_svm <- BayesianOptimization(svm.cv1, bounds=list(gamma=c(0,2), cost=c(0,1000)), init_points=10, n_iter=20 )
+```
+```{r}
+# Now we make a svm based on the parameters we got from above
+best_params <- bayesian_optimized_svm$Best_Par
+print(best_params)
+best_svm <- svm(factor(SeriousDlqin2yrs) ~ ., data=data.train, kernel="radial", cost = 0.7752159, gamma = 865.7703376)
+accuracy_svm <- get_accuracy(best_svm, data.cv)
+print(accuracy_svm)
+```
+
+
 Next steps:
 Figure out why the accuracies are exactly the same (they shouldn't be)
 Figure out a way to tune these classifiers with cross validation
