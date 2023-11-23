@@ -31,7 +31,7 @@ na_column_names
 ```
 
 ```{r}
-imputed_data <- mice(data.train, m=15, method='pmm', seed=47)
+imputed_data <- mice(data.train, m=20, method='pmm', seed=47, printFlag=FALSE)
 ```
 
 
@@ -39,8 +39,17 @@ imputed_data <- mice(data.train, m=15, method='pmm', seed=47)
 plot(imputed_data)
 ```
 ```{r}
-complete(imputed_data, 1)
+for(i in 1:20) {  # If you have 20 imputed datasets
+  complete_data <- complete(imputed_data, action = i)
+  filename <- paste0("imputed_data/imputed_data_", i, ".csv")  # creates a unique filename for each dataset
+  write.csv(complete_data, file = filename, row.names = FALSE)
+}
 ```
 ```{r}
 data.train
 ```
+
+```{r}
+summary(imputed_data)
+```
+It seems like the most common approach is to train seperate models, then combine our result. So, we can train a random forest classification model on each of the 20 imputed datasets. For test data, the 20 models will "vote" on the classification result.
