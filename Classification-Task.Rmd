@@ -15,24 +15,48 @@ library(ROCR)
 
 First we load the data
 ```{r}
-data.not_test <- read.csv("cs-training.csv")
-data.test <- read.csv("cs-test.csv")
-# Remove the index column so we don't overfit
-column_to_remove <- "X"
-column_to_remove_2 <- "SeriousDlqin2yrs"
-data.not_test <- data.not_test[,-which(names(data.not_test) == column_to_remove)]
-data.test <- data.test[,-which(names(data.test) == column_to_remove)]
-data.test <- data.test[,-which(names(data.test) == column_to_remove_2)]
+useImputed <- TRUE
 
-print(dim(data.not_test))
-print(dim(data.test))
+if (useImputed) {
+  data.not_test <- read.csv("imputed_data/imputed_data_1.csv")
+  data.test <- read.csv("cs-test.csv")
+  # Remove the index column so we don't overfit
+  column_to_remove <- "X"
+  column_to_remove_2 <- "SeriousDlqin2yrs"
+  data.not_test <- data.not_test[,-which(names(data.not_test) == column_to_remove)]
+  data.test <- data.test[,-which(names(data.test) == column_to_remove)]
+  data.test <- data.test[,-which(names(data.test) == column_to_remove_2)]
+  
+  print(dim(data.not_test))
+  print(dim(data.test))
+  
+  # Next we remove the na values
+  data.not_test <- na.omit(data.not_test)
+  data.test <- na.omit(data.test)
+  
+  print(dim(data.not_test))
+  print(dim(data.test))
+} else {
+  data.not_test <- read.csv("cs-training.csv")
+  data.test <- read.csv("cs-test.csv")
+  # Remove the index column so we don't overfit
+  column_to_remove <- "X"
+  column_to_remove_2 <- "SeriousDlqin2yrs"
+  data.not_test <- data.not_test[,-which(names(data.not_test) == column_to_remove)]
+  data.test <- data.test[,-which(names(data.test) == column_to_remove)]
+  data.test <- data.test[,-which(names(data.test) == column_to_remove_2)]
+  
+  print(dim(data.not_test))
+  print(dim(data.test))
+  
+  # Next we remove the na values
+  data.not_test <- na.omit(data.not_test)
+  data.test <- na.omit(data.test)
+  
+  print(dim(data.not_test))
+  print(dim(data.test))
+}
 
-# Next we remove the na values
-data.not_test <- na.omit(data.not_test)
-data.test <- na.omit(data.test)
-
-print(dim(data.not_test))
-print(dim(data.test))
 ```
 For the purpose of testing, we will use a much smaller size of the data
 ```{r}
@@ -123,6 +147,7 @@ svm.cv1 <- function(gamma, cost) {
 # test <- svm.cv1(0.377, 508)
 bayesian_optimized_svm <- BayesianOptimization(svm.cv1, bounds=list(gamma=c(0,2), cost=c(0,1000)), init_points=10, n_iter=20 )
 ```
+
 ```{r}
 # Now we make a svm based on the parameters we got from above
 best_params <- bayesian_optimized_svm$Best_Par
