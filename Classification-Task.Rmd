@@ -299,8 +299,14 @@ svm.cv1 <- function(gamma, cost) {
     train.y <- as.factor(y[-(test[1]:test[2])])
     train.data <- data.frame(y=train.y,data[train,])
 
+    for(i in seq_along(imputed_data_test)) {
+        svm_models[[i]] <- svm( SeriousDlqin2yrs ~ . - X, data = imputed_data_sets[[i]], 
+                                gamma=gamma, 
+                                cost=cost)
+    }
+    
     # fit <- svm(y~., data=train.data, gamma=gamma, cost=cost)
-    fit <- with(imputed_data_train, svm(y~.-X, gamma=gamma, cost=cost))
+    fit <- with(imputed_data_train$imp, svm(SeriousDlqin2yrs~.-X, gamma=gamma, cost=cost))
 
     predictions <- lapply(1:num_imp, function(m) {
       # Assuming 'fit' is the list of models you trained
