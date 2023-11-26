@@ -11,6 +11,8 @@ library(e1071)
 library(rBayesianOptimization)
 library(pROC)
 library(ROCR)
+library(ranger)
+library(xgboost)
 ```
 
 First we load the data
@@ -181,17 +183,81 @@ rf_objective <- function(ntree, mtry) {
     train.y <- as.factor(y[-(test[1]:test[2])])
     train.data <- data.frame(y=train.y,data[train,])
 
-    fit <- randomForest(y~., data=train.data, ntree=ntree, mtry=mtry) 
-    pred <- predict(fit, test.data, type="response")
+    # fit <- randomForest(y~., data=train.data, ntree=ntree, mtry=mtry)
+    # pred <- predict(fit, test.data, type="response")
+    # pred_list <- as.numeric(as.character(pred))
     
-    pred_list <- as.numeric(as.character(pred))
+    fit <- ranger(y~., data=train.data, num.trees=ntree, mtry=mtry)
+    pred <- predict(fit, test.data, type="response")
+    pred_list <- as.numeric(as.character(pred$predictions))
+    # print("=======")
+    # print(as.numeric(as.character(pred$predictions)))
+    # print("=======")
     fitted <- c(fitted, pred_list)
   }
   return (list(Score=roc(y,fitted)$auc, Pred=0))
 }
-
-bayesian_optimized_rf <- BayesianOptimization(FUN=rf_objective, bounds=list(ntree=c(500, 750), mtry=c(2,6)), init_points=10, n_iter=20)
+# t <- rf_objective(500, 2)
+bayesian_optimized_rf <- BayesianOptimization(FUN=rf_objective, bounds=list(ntree=c(500, 750), mtry=c(1,4)), init_points=10, n_iter=20)
 ```
+As you can see above, randomForests from the ranger class as a very poor AUC. 
+
+We will now try the xgboost package with bayesian optimization
+```{r}
+data <- data.train_no_labels
+y <- data.train_labels #droplevels(iris[51:150,5])
+b <- sample(1:100) 
+data <- data[b,]
+y <- y[b]
+
+xgboost_objective <- function(max_depth, eta) {
+  n <- nrow(data)
+  splits <- c(seq(1,n, n/10),n+1)
+  jumps <- n/10
+  fitted <- c()
+  for (i in 1:10) {
+    test <- splits[i:(i+1)]
+    test[2] <- test[2]-1
+    test.y <- as.factor(y[test[1]: test[2]])
+    # print(test.y)
+    test.data <- data.frame(y=test.y, data[test[1]:test[2],])
+    
+    # print("test.y")
+    # print(as.numeric(as.character(test.y)))
+    
+    train <- (1:n)[-(test[1]:test[2])]
+    train.y <- as.factor(y[-(test[1]:test[2])])
+    train.data <- data.frame(y=train.y,data[train,])
+    
+    # print("train.y")
+    # print(as.numeric(as.character(train.y)))
+    
+    # Convert the data to xgboost format
+    train_matrix <- xgb.DMatrix(data=as.matrix(data[train,]), label=as.numeric(as.character(train.y)))
+    test_matrix <- xgb.DMatrix(data=as.matrix(data[test[1]:test[2],], label=as.numeric(as.character(test.y))))
+    params <- list(
+      objective = "binary:logistic",
+      eval_metric = "logloss",
+      max_depth = as.integer(max_depth),
+      eta = eta,
+      nthread = 2
+    )
+    
+    fit <- xgboost(data = train_matrix, params = params, nrounds = 10, verbose = 0)
+    pred <- predict(fit, test_matrix)
+    pred_list <- ifelse(pred>0.5, 1, 0)
+    # print("=======")
+    # print(as.numeric(as.character(pred$predictions)))
+    # print(pred_list)
+    # print("=======")
+    fitted <- c(fitted, pred_list)
+  }
+  return (list(Score=roc(y,fitted)$auc, Pred=0))
+}
+# t <- xgboost_objective(500, 2)
+bayesian_optimized_rf <- BayesianOptimization(FUN=xgboost_objective, bounds=list(max_depth=c(2, 5), eta=c(0.001,0.1)), init_points=10, n_iter=20)
+```
+
 
 Next steps:
 Figure out why the accuracies are exactly the same (they shouldn't be)
