@@ -13,6 +13,7 @@ library(pROC)
 library(ROCR)
 library(ranger)
 library(xgboost)
+library(mice)
 ```
 
 First we load the data
@@ -150,6 +151,7 @@ svm.cv1 <- function(gamma, cost) {
 bayesian_optimized_svm <- BayesianOptimization(svm.cv1, bounds=list(gamma=c(0,2), cost=c(0,1000)), init_points=10, n_iter=20 )
 ```
 
+
 ```{r}
 # Now we make a svm based on the parameters we got from above
 best_params <- bayesian_optimized_svm$Best_Par
@@ -210,7 +212,7 @@ b <- sample(1:100)
 data <- data[b,]
 y <- y[b]
 
-xgboost_objective <- function(max_depth, eta) {
+xgboost_objective <- function(eta) {
   n <- nrow(data)
   splits <- c(seq(1,n, n/10),n+1)
   jumps <- n/10
@@ -238,12 +240,12 @@ xgboost_objective <- function(max_depth, eta) {
     params <- list(
       objective = "binary:logistic",
       eval_metric = "logloss",
-      max_depth = as.integer(max_depth),
+      max_depth = 40,
       eta = eta,
-      nthread = 2
+      nthread = 4
     )
     
-    fit <- xgboost(data = train_matrix, params = params, nrounds = 10, verbose = 0)
+    fit <- xgboost(data = train_matrix, params = params, nrounds = 50, verbose = 0)
     pred <- predict(fit, test_matrix)
     pred_list <- ifelse(pred>0.5, 1, 0)
     # print("=======")
@@ -255,10 +257,84 @@ xgboost_objective <- function(max_depth, eta) {
   return (list(Score=roc(y,fitted)$auc, Pred=0))
 }
 # t <- xgboost_objective(500, 2)
-bayesian_optimized_rf <- BayesianOptimization(FUN=xgboost_objective, bounds=list(max_depth=c(2, 5), eta=c(0.001,0.1)), init_points=10, n_iter=20)
+bayesian_optimized_rf <- BayesianOptimization(FUN=xgboost_objective, bounds=list(eta=c(0.0001,1)), init_points=100, n_iter=20)
+```
+For some reason, the above model does not get above "0.63"
+
+Since we found that the svm model did the best on our training and cross validation sets, we decided to use this with our imputed data 
+
+Using the imputed data:
+```{r}
+# print(data.train_labels)
+num_imp = 20
+data.train <- read.csv("cs-training.csv")
+data.test <- read.csv("cs-test.csv")
+
+imputed_data_train <- mice(data.train, m=num_imp, method='pmm', seed=47, printFlag=FALSE)
+imputed_data_test <- mice(data.test, m=num_imp, method='pmm', seed=47, printFlag=FALSE)
+# print(imputed_data)
 ```
 
 
+```{r}
+data <- data_imputed_no_labels
+y <- y_imputed #droplevels(iris[51:150,5])
+b <- sample(1:100) 
+data <- data[b,]
+y <- y[b]
+
+svm.cv1 <- function(gamma, cost) {
+  n <- nrow(data)
+  splits <- c(seq(1,n, n/10),n+1)
+  jumps <- n/10
+  fitted <- c()
+  for (i in 1:10) {
+    test <- splits[i:(i+1)]
+    test[2] <- test[2]-1
+    test.y <- as.factor(y[test[1]: test[2]])
+    # print(test.y)
+    test.data <- data.frame(y=test.y, data[test[1]:test[2],])
+    
+    train <- (1:n)[-(test[1]:test[2])]
+    train.y <- as.factor(y[-(test[1]:test[2])])
+    train.data <- data.frame(y=train.y,data[train,])
+
+    # fit <- svm(y~., data=train.data, gamma=gamma, cost=cost)
+    fit <- with(imputed_data_train, svm(y~.-X, gamma=gamma, cost=cost))
+
+    predictions <- lapply(1:num_imp, function(m) {
+      # Assuming 'fit' is the list of models you trained
+      predict(fit[[m]], newdata = imputed_data_test[imputed_data_test$.imp == m,])
+    })
+    
+    # For classification (binary as an example):
+    # Convert predictions to binary (if needed)
+    binaryPredictions <- lapply(predictions, function(x) ifelse(x > 0.5, 1, 0))
+    # Calculate mode for each observation
+    finalPredictions <- apply(do.call(cbind, binaryPredictions), 1, function(x) {
+        names(which.max(table(x)))
+    })
+    print(finalPredictions)
+
+  }
+  return (0)#(list(Score=roc(y,fitted)$auc, Pred=0))
+}
+test <- svm.cv1(0.377, 508)
+# bayesian_optimized_svm <- BayesianOptimization(svm.cv1, bounds=list(gamma=c(0,2), cost=c(0,1000)), init_points=10, n_iter=20 )
+```
+
+```{r}
+data_imputed_no_labels <- imputed_data$data
+column_to_remove <- "X"
+column_to_remove_2 <- "SeriousDlqin2yrs"
+data_imputed <- imputed_data$data
+data_imputed <- data_imputed[,-which(names(data_imputed_no_labels) == column_to_remove)]
+data_imputed_no_labels <- data_imputed_no_labels[,-which(names(data_imputed_no_labels) == column_to_remove)]
+data_imputed_no_labels <- data_imputed_no_labels[,-which(names(data_imputed_no_labels) == column_to_remove_2)]
+y_imputed <- imputed_data$data$SeriousDlqin2yrs #droplevels(iris[51:150,5])
+print(data_imputed)
+# print(y_imputed)
+```
 Next steps:
 Figure out why the accuracies are exactly the same (they shouldn't be)
 Figure out a way to tune these classifiers with cross validation
