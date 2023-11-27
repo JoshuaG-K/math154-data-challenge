@@ -36,13 +36,7 @@ if (useImputed) {
   data.test <- data.test[,-which(names(data.test) == column_to_remove_2)]
   data.imputed.test <- mice(data.test, model=data.imputed.not_test)
   data.test <- complete(data.imputed.test, 1)
-  
-  print(dim(data.not_test))
-  print(dim(data.test))
-  
-  # Next we remove the na values
-  data.not_test <- na.omit(data.not_test)
-  data.test <- na.omit(data.test)
+  data.test.full <- complete(data.imputed.test, 1)
   
   print(dim(data.not_test))
   print(dim(data.test))
@@ -122,7 +116,7 @@ Now we test out the bayesian optimization package:
 # print(data.train_labels)
 data <- data.train_no_labels
 y <- data.train_labels 
-b <- sample(1:100) 
+b <- sample(1:length(y)) 
 data <- data[b,]
 y <- y[b]
 
@@ -142,8 +136,8 @@ svm.cv1 <- function(gamma, cost) {
     train.y <- as.factor(y[-(test[1]:test[2])])
     train.data <- data.frame(y=train.y,data[train,])
 
-    fit <- svm(y~., data=train.data, kernel="radial", gamma=gamma, cost=cost)
-    fitted <- c(fitted, attributes(predict(fit, test.data, decision.values=TRUE))$decision)
+    fit <- svm(y~., data=train.data, kernel="radial", gamma=gamma, cost=cost, probability=TRUE)
+    fitted <- c(fitted, attributes(predict(fit, test.data, decision.values=TRUE, probability=TRUE))$decision)
     # print(y)
     # print(length(y))
     # print(length(fitted))
@@ -152,7 +146,7 @@ svm.cv1 <- function(gamma, cost) {
   return(list(Score=roc(y,fitted)$auc, Pred=0))
 }
 # test <- svm.cv1(0.377, 508)
-bayesian_optimized_svm <- BayesianOptimization(svm.cv1, bounds=list(gamma=c(0,0.001), cost=c(1000,1500)), init_points=20, n_iter=30 )
+bayesian_optimized_svm <- BayesianOptimization(svm.cv1, bounds=list(gamma=c(0,0.0001), cost=c(1000,1500)), init_points=20, n_iter=20 )
 ```
 
 
@@ -164,8 +158,22 @@ best_cost <- as.numeric(as.character(best_params["cost"]))
 best_gamma <- as.numeric(as.character(best_params["gamma"]))
 print(best_cost)
 print(best_gamma)
-best_svm <- svm(factor(SeriousDlqin2yrs) ~ ., data=data.train, kernel="radial", cost = best_cost, gamma = best_gamma)
+best_svm <- svm(factor(SeriousDlqin2yrs) ~ ., data=data.train, kernel="radial", cost = best_cost, gamma = best_gamma, probability=TRUE)
 accuracy_svm <- get_accuracy(best_svm, data.cv)
 print(accuracy_svm)
 ```
 As you can see from above, our best ROC value was 0.9139785 using svm with a radial kernel. The parameters to achieve this are gamma = 9.408567e-05 and cost = 1232.3198. 
+
+Round = 28	gamma = 8.930776e-05	cost = 1342.2408	Value = 0.8540707
+
+```{r}
+predictions <- predict(best_svm, data.test, probability=TRUE)
+probabilities <- attributes(predictions)$probabilities
+prob_of_1 <- probabilities[,1]
+```
+
+```{r}
+write.csv(data.frame(probabilities=prob_of_1), "model_predictions.csv")
+```
+
+
