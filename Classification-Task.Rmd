@@ -266,7 +266,7 @@ Since we found that the svm model did the best on our training and cross validat
 Using the imputed data:
 ```{r}
 library(mice)
-num_imp = 1
+num_imp <- 1
 data.train <- read.csv("cs-training.csv")
 data.test <- read.csv("cs-test.csv")
 
@@ -276,18 +276,27 @@ imputed_data_test <- mice(data.test, m=num_imp, method='pmm', seed=47, printFlag
 
 ```{r}
 library(e1071)
+
+data.fraction <- 0.10
+
+reduce <- function(df) {
+  n <- floor(data.fraction*nrow(df))
+  return(df[1:n,])
+}
+
 svm.test <- function(gamma, cost) {
   svm.models = c()
   for(i in 1:num_imp) {
     print(i)
-    svm.models[[i]] <- svm(factor(SeriousDlqin2yrs) ~ . - X, data = complete(imputed_data_train, i), 
+    svm.models[[i]] <- svm(factor(SeriousDlqin2yrs) ~ ., data = reduce(complete(imputed_data_train, i)), 
                            gamma=gamma, 
-                           cost=cost)
+                           kernel="linear",
+                           cost=cost,
+                           probability = TRUE)
   }
-
+  
   predictions <- lapply(1:num_imp, function(m) {
-    print(m)
-    predict(svm.models[[m]], newdata = complete(imputed_data_test, m))
+    predict(svm.models[[m]], newdata = complete(imputed_data_test, m), probability = TRUE)
   })
   
   binaryPredictions <- lapply(predictions, function(x) ifelse(x > 0.5, 1, 0))
@@ -297,8 +306,14 @@ svm.test <- function(gamma, cost) {
   return (finalPredictions)
 }
 
-test <- svm.test(0.377, 508)
+test <- svm.test(4, 0.5)
 ```
+
+```{r}
+dim(complete(imputed_data_train, 1))
+dim(complete(imputed_data_test, 1))
+```
+
 
 ```{r}
 test
