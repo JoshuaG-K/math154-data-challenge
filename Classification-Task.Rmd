@@ -275,9 +275,10 @@ imputed_data_test <- mice(data.test, m=num_imp, method='pmm', seed=47, printFlag
 ```
 
 ```{r}
+library(e1071)
 svm.test <- function(gamma, cost) {
   svm.models = c()
-  for(i in seq_along(imputed_data_test)) {
+  for(i in 1:num_imp) {
     print(i)
     svm.models[[i]] <- svm(SeriousDlqin2yrs ~ . - X, data = complete(imputed_data_train, i), 
                            gamma=gamma, 
