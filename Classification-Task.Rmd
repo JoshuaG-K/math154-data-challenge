@@ -280,21 +280,17 @@ svm.test <- function(gamma, cost) {
   svm.models = c()
   for(i in 1:num_imp) {
     print(i)
-    svm.models[[i]] <- svm(SeriousDlqin2yrs ~ . - X, data = complete(imputed_data_train, i), 
+    svm.models[[i]] <- svm(factor(SeriousDlqin2yrs) ~ . - X, data = complete(imputed_data_train, i), 
                            gamma=gamma, 
                            cost=cost)
   }
 
   predictions <- lapply(1:num_imp, function(m) {
-    # Assuming 'fit' is the list of models you trained
     print(m)
     predict(svm.models[[m]], newdata = complete(imputed_data_test, m))
   })
   
-  # For classification (binary as an example):
-  # Convert predictions to binary (if needed)
   binaryPredictions <- lapply(predictions, function(x) ifelse(x > 0.5, 1, 0))
-  # Calculate mode for each observation
   finalPredictions <- apply(do.call(cbind, binaryPredictions), 1, function(x) {
       names(which.max(table(x)))
   })
