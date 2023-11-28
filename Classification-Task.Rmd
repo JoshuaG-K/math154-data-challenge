@@ -264,82 +264,80 @@ For some reason, the above model does not get above "0.63"
 Since we found that the svm model did the best on our training and cross validation sets, we decided to use this with our imputed data 
 
 Using the imputed data:
+
+Mo's second attempt at getting probabilities:
+
 ```{r}
 library(mice)
-num_imp <- 1
-data.train <- read.csv("cs-training.csv")
-data.test <- read.csv("cs-test.csv")
-
-imputed_data_train <- mice(data.train, m=num_imp, method='pmm', seed=47, printFlag=FALSE)
-imputed_data_test <- mice(data.test, m=num_imp, method='pmm', seed=47, printFlag=FALSE)
-```
-
-```{r}
 library(e1071)
 
-data.fraction <- 0.10
+# Load data
+data.train <- read.csv("cs-training.csv")
+data.test <- read.csv("cs-test.csv")
+data.test$SeriousDlqin2yrs <- NULL
 
-reduce <- function(df) {
-  n <- floor(data.fraction*nrow(df))
-  return(df[1:n,])
+# Parameters
+num_imp <- 11
+gamma <- 1.403102
+cost <- 3.659304
+subset_size <- 0.10 # Using first 10% of the training data
+
+# Impute data
+set.seed(47)
+imputed_data_train <- mice(data.train, m=num_imp, method='pmm', printFlag=FALSE)
+imputed_data_test <- mice(data.test, m=num_imp, method='pmm', printFlag=FALSE)
+```
+Now, to train an svm on each of these imputed sets, and generate a probability of deliquincy for each, then average those probabilities.
+
+```{r}
+# Initialize a list to store probability values from all imputations
+probability_values_list <- vector("list", num_imp)
+
+# Loop through each imputation
+for(i in 1:num_imp) {
+    # Get the ith imputed dataset
+    imputed_train <- complete(imputed_data_train, i)
+    imputed_test <- complete(imputed_data_test, i)
+
+    # Subset the training data
+    subset_train <- imputed_train[1:(nrow(imputed_train) * subset_size), ]
+
+    # Train the SVM model with probability estimates
+    svm_model <- svm(factor(SeriousDlqin2yrs) ~ . - X, data = subset_train, probability = TRUE, gamma = gamma, cost = cost)
+
+    # Predict probabilities for ith imputation
+    svm_prediction <- predict(svm_model, imputed_test, probability = TRUE)
+    
+    # Extract probabilities
+    prob_values <- attr(svm_prediction, "probabilities")
+
+    # Check if the structure is as expected, and extract the relevant probabilities
+    if (!is.null(prob_values) && ncol(prob_values) == 2) {
+        positive_class_probabilities <- prob_values[, 1]
+        probability_values_list[[i]] <- positive_class_probabilities
+    } else {
+        warning("Unexpected structure in SVM probability output for imputation ", i)
+        next  # Skip this imputation
+    }
 }
 
-svm.test <- function(gamma, cost) {
-  svm.models = c()
-  for(i in 1:num_imp) {
-    print(i)
-    svm.models[[i]] <- svm(factor(SeriousDlqin2yrs) ~ ., data = reduce(complete(imputed_data_train, i)), 
-                           gamma=gamma, 
-                           kernel="linear",
-                           cost=cost,
-                           probability = TRUE)
-  }
-  
-  predictions <- lapply(1:num_imp, function(m) {
-    predict(svm.models[[m]], newdata = complete(imputed_data_test, m), probability = TRUE)
-  })
-  
-  binaryPredictions <- lapply(predictions, function(x) ifelse(x > 0.5, 1, 0))
-  finalPredictions <- apply(do.call(cbind, binaryPredictions), 1, function(x) {
-      names(which.max(table(x)))
-  })
-  return (finalPredictions)
-}
-
-test <- svm.test(4, 0.5)
+# Convert list to matrix and calculate average probability
+average_probabilities_matrix <- do.call(cbind, probability_values_list)
+average_probabilities <- rowMeans(average_probabilities_matrix, na.rm = TRUE)
 ```
 
 ```{r}
-dim(complete(imputed_data_train, 1))
-dim(complete(imputed_data_test, 1))
-```
+# Create a data frame with Id and Probability columns
+data <- data.frame(
+  Id = 1:length(average_probabilities),
+  Probability = average_probabilities
+)
 
+# Create a filename string with gamma and cost values
+filename <- paste0("output_gamma_", gamma, "_cost_", cost, "_imp_", num_imp, ".csv")
 
-```{r}
-test
-```
-
-
-Ignore for now:
-
-```{r}
-data_imputed_no_labels <- imputed_data$data
-column_to_remove <- "X"
-column_to_remove_2 <- "SeriousDlqin2yrs"
-data_imputed <- imputed_data$data
-data_imputed <- data_imputed[,-which(names(data_imputed_no_labels) == column_to_remove)]
-data_imputed_no_labels <- data_imputed_no_labels[,-which(names(data_imputed_no_labels) == column_to_remove)]
-data_imputed_no_labels <- data_imputed_no_labels[,-which(names(data_imputed_no_labels) == column_to_remove_2)]
-y_imputed <- imputed_data$data$SeriousDlqin2yrs #droplevels(iris[51:150,5])
-print(data_imputed)
-# print(y_imputed)
-```
-Next steps:
-Figure out why the accuracies are exactly the same (they shouldn't be)
-Figure out a way to tune these classifiers with cross validation
-
-```{r}
-
+# Write the data frame to a CSV file with the new filename
+write.csv(data, filename, row.names = FALSE)
 ```
 
 
