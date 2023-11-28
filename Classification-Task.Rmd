@@ -64,11 +64,14 @@ if (useImputed) {
 ```
 For the purpose of testing, we will use a much smaller size of the data
 ```{r}
+set.seed(47)
 sandbox_size <- 0.05
 num_rows <- nrow(data.not_test)
 data.not_test <- data.not_test[1:round(sandbox_size*num_rows),]
+data.not_test <- sample(nrow(data.not_test))
 num_rows_test <- nrow(data.test)
 data.test <- data.test[1:round(sandbox_size*num_rows_test),]
+data.test <- sample(nrow(data.test))
 print(dim(data.not_test))
 print(dim(data.test))
 ```
@@ -119,6 +122,7 @@ y <- data.train_labels
 b <- sample(1:length(y)) 
 data <- data[b,]
 y <- y[b]
+y <- as.factor(y)
 
 svm.cv1 <- function(gamma, cost) {
   n <- nrow(data)
@@ -137,16 +141,35 @@ svm.cv1 <- function(gamma, cost) {
     train.data <- data.frame(y=train.y,data[train,])
 
     fit <- svm(y~., data=train.data, kernel="radial", gamma=gamma, cost=cost, probability=TRUE)
-    fitted <- c(fitted, attributes(predict(fit, test.data, decision.values=TRUE, probability=TRUE))$decision)
+    predictions <- predict(fit, test.data, decision.values=TRUE, probability=TRUE)
+    decisions_attr <- attributes(predictions)$decision
+    # [, 1] corresponds to the column predicting 0 and 1 corresponds to the column predicting 1
+    probabilities <- as.numeric(as.character(attributes(predictions)$probabilities[,1]))
+    # decisions <- as.numeric(as.character(predictions))
+    # decisions <- ifelse(decisions > 0, 0, 1)
+    fitted <- c(fitted, probabilities)
+    # print("Y")
     # print(y)
+    # print("probabilities")
+    # print(probabilities)
+    # print("predictions")
+    # print(decisions)
+    # print("decisions")
+    # print(decisions_attr)
+    # print("attributes")
+    # print(attributes(predictions))
+    # print(as.numeric(as.character(predictions)))
+    # print(attributes(predict(fit, test.data, decision.values=TRUE))$decision)
     # print(length(y))
     # print(length(fitted))
     # print(attributes(predict(fit, test.data, decision.values=TRUE)))
   }
+  # print("fitted")
+  # print(fitted)
   return(list(Score=roc(y,fitted)$auc, Pred=0))
 }
 # test <- svm.cv1(0.377, 508)
-bayesian_optimized_svm <- BayesianOptimization(svm.cv1, bounds=list(gamma=c(0,0.0001), cost=c(1000,1500)), init_points=20, n_iter=20 )
+bayesian_optimized_svm <- BayesianOptimization(svm.cv1, bounds=list(gamma=c(0,5), cost=c(0,50)), init_points=20, n_iter=20 )
 ```
 
 
@@ -167,9 +190,11 @@ As you can see from above, our best ROC value was 0.9139785 using svm with a rad
 Round = 28	gamma = 8.930776e-05	cost = 1342.2408	Value = 0.8540707
 
 ```{r}
-predictions <- predict(best_svm, data.test, probability=TRUE)
+predictions <- predict(best_svm, data.test.full, decision.values=TRUE, probability=TRUE)
+decisions <-  attributes(predictions)$decision
 probabilities <- attributes(predictions)$probabilities
 prob_of_1 <- probabilities[,1]
+print(decisions)
 ```
 
 ```{r}
