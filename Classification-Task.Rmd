@@ -204,7 +204,7 @@ rf_objective <- function(ntree, mtry) {
     fit <- ranger(y~., data=train.data, num.trees=ntree, mtry=mtry, probability=TRUE)
     pred <- predict(fit, test.data)
     # probability in column 1 is for 0, column 2 is for 1
-    probabilities <- pred$predictions[,1]
+    probabilities <- pred$predictions[,2]
     # pred_list <- as.numeric(as.character(pred$predictions))
     # print("=======")
     # print(as.numeric(as.character(pred$predictions)))
@@ -221,31 +221,73 @@ bayesian_optimized_rf <- BayesianOptimization(FUN=rf_objective, bounds=list(ntre
 
 
 ```{r}
-# Now we make a svm based on the parameters we got from above
-best_params <- bayesian_optimized_svm$Best_Par
-print(as.character(best_params["gamma"]))
-best_cost <- as.numeric(as.character(best_params["cost"]))
-best_gamma <- as.numeric(as.character(best_params["gamma"]))
-print(best_cost)
-print(best_gamma)
-best_svm <- svm(factor(SeriousDlqin2yrs) ~ ., data=data.train, kernel="radial", cost = best_cost, gamma = best_gamma, probability=TRUE)
-accuracy_svm <- get_accuracy(best_svm, data.cv)
-print(accuracy_svm)
-```
-As you can see from above, our best ROC value was 0.9139785 using svm with a radial kernel. The parameters to achieve this are gamma = 9.408567e-05 and cost = 1232.3198. 
+library(mice)
+library(e1071)
 
-Round = 28	gamma = 8.930776e-05	cost = 1342.2408	Value = 0.8540707
+# Load data
+data.train <- read.csv("cs-training.csv")
+data.test <- read.csv("cs-test.csv")
+data.test$SeriousDlqin2yrs <- NULL
 
-```{r}
-predictions <- predict(best_svm, data.test.full, decision.values=TRUE, probability=TRUE)
-decisions <-  attributes(predictions)$decision
-probabilities <- attributes(predictions)$probabilities
-prob_of_1 <- probabilities[,1]
-print(decisions)
+# Parameters
+num_imp <- 11
+ntree <- 576.2141	
+mtry <- 1.610268	
+subset_size <- 0.10 # Using first 10% of the training data
+
+# Impute data
+set.seed(47)
+imputed_data_train <- mice(data.train, m=num_imp, method='pmm', printFlag=FALSE)
+imputed_data_test <- mice(data.test, m=num_imp, method='pmm', printFlag=FALSE)
 ```
+Now, to train an svm on each of these imputed sets, and generate a probability of deliquincy for each, then average those probabilities.
 
 ```{r}
-write.csv(data.frame(probabilities=prob_of_1), "model_predictions.csv")
+# Initialize a list to store probability values from all imputations
+probability_values_list <- vector("list", num_imp)
+
+# Loop through each imputation
+for(i in 1:num_imp) {
+    # Get the ith imputed dataset
+    imputed_train <- complete(imputed_data_train, i)
+    imputed_test <- complete(imputed_data_test, i)
+
+    # Subset the training data
+    subset_train <- imputed_train[1:(nrow(imputed_train) * subset_size), ]
+
+    # Train the SVM model with probability estimates
+    rf_model <- ranger(factor(SeriousDlqin2yrs) ~ . - X, data = subset_train, probability = TRUE, num.trees =ntree, mtry = mtry)
+
+    # Predict probabilities for ith imputation
+    rf_prediction <- predict(rf_model, imputed_test)
+    
+    # Extract probabilities
+    prob_values <- rf_prediction$predictions[,2] # attr(rf_prediction, "probabilities")
+    # print(prob_values)
+    # Check if the structure is as expected, and extract the relevant probabilities
+    positive_class_probabilities <- prob_values
+    probability_values_list[[i]] <- positive_class_probabilities
+  
+}
+
+# Convert list to matrix and calculate average probability
+average_probabilities_matrix <- do.call(cbind, probability_values_list)
+average_probabilities <- rowMeans(average_probabilities_matrix, na.rm = TRUE)
 ```
+
+```{r}
+# Create a data frame with Id and Probability columns
+data <- data.frame(
+  Id = 1:length(average_probabilities),
+  Probability = average_probabilities
+)
+
+# Create a filename string with gamma and cost values
+filename <- paste0("output_ntree_", ntree, "_mtry_", mtry, "_imp_", num_imp, ".csv")
+
+# Write the data frame to a CSV file with the new filename
+write.csv(data, filename, row.names = FALSE)
+```
+
 
 
